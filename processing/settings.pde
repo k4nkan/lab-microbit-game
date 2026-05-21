@@ -93,11 +93,11 @@ String event_value = "";
 boolean target_spawn_pending = false;
 int bomb_cooldown_frames = 0;
 
-PrintWriter sensor_log_writer;
+PrintWriter input_log_writer;
 PrintWriter game_log_writer;
 String session_id = "";
-String sensor_log_path = "";
+String input_log_path = "";
 String game_log_path = "";
 long start_pc_timestamp_ms = 0;
-int sensor_rows_since_flush = 0;
+int input_rows_since_flush = 0;
 int game_rows_since_flush = 0;

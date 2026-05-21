@@ -7,22 +7,22 @@ void initLog() {
     dir.mkdirs();
   }
 
-  sensor_log_path = sketchPath("logs/" + session_id + "_sensor.csv");
+  input_log_path = sketchPath("logs/" + session_id + "_input.csv");
   game_log_path = sketchPath("logs/" + session_id + "_game.csv");
 
-  sensor_log_writer = createWriter(sensor_log_path);
-  sensor_log_writer.println(sensorCsvHeader());
-  sensor_log_writer.flush();
+  input_log_writer = createWriter(input_log_path);
+  input_log_writer.println(inputCsvHeader());
+  input_log_writer.flush();
 
   game_log_writer = createWriter(game_log_path);
   game_log_writer.println(gameCsvHeader());
   game_log_writer.flush();
 
-  println("SENSOR LOG: " + sensor_log_path);
+  println("INPUT LOG: " + input_log_path);
   println("GAME LOG: " + game_log_path);
 }
 
-String sensorCsvHeader() {
+String inputCsvHeader() {
   return "pc_timestamp_ms,elapsed_ms,microbit_runtime_ms,frame_count,serial_valid,"
     + "serial_column_count,serial_valid_count,serial_invalid_count,"
     + "ax_raw,ay_raw,az_raw,light_raw,temp_raw,shake_raw,pitch_raw,roll_raw,btnA_raw,btnB_raw,"
@@ -40,12 +40,12 @@ String gameCsvHeader() {
 
 void writeLog() {
   updateTargetMetrics();
-  writeSensorLog();
+  writeInputLog();
   writeGameLog();
 }
 
-void writeSensorLog() {
-  if (sensor_log_writer == null) {
+void writeInputLog() {
+  if (input_log_writer == null) {
     return;
   }
 
@@ -82,12 +82,12 @@ void writeSensorLog() {
     csvEscape(last_serial_line)
   };
 
-  sensor_log_writer.println(join(row, ","));
-  sensor_rows_since_flush++;
+  input_log_writer.println(join(row, ","));
+  input_rows_since_flush++;
 
-  if (sensor_rows_since_flush >= LOG_FLUSH_EVERY_FRAMES) {
-    sensor_log_writer.flush();
-    sensor_rows_since_flush = 0;
+  if (input_rows_since_flush >= LOG_FLUSH_EVERY_FRAMES) {
+    input_log_writer.flush();
+    input_rows_since_flush = 0;
   }
 }
 
@@ -132,10 +132,10 @@ void writeGameLog() {
 }
 
 void closeLog() {
-  if (sensor_log_writer != null) {
-    sensor_log_writer.flush();
-    sensor_log_writer.close();
-    sensor_log_writer = null;
+  if (input_log_writer != null) {
+    input_log_writer.flush();
+    input_log_writer.close();
+    input_log_writer = null;
   }
 
   if (game_log_writer != null) {

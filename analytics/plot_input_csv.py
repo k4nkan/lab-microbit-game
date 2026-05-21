@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Processingで記録したmicro:bitのCSVログをグラフ表示する。"""
+"""Processingで記録した汎用入力CSVログをグラフ表示する。"""
 
 from __future__ import annotations
 
@@ -167,7 +167,7 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help=(
             "分析するCSVファイル。省略すると "
-            "processing/logs/ 内の最新 session_*_sensor.csv を使います。"
+            "processing/logs/ 内の最新 session_*_input.csv を使います。"
         ),
     )
     parser.add_argument(
@@ -191,7 +191,7 @@ def parse_args() -> argparse.Namespace:
 
 def latest_csv_path() -> Path:
     """ログフォルダから最新CSVを返す。"""
-    for pattern in ("session_*_sensor.csv", "session_*.csv", "log_*.csv"):
+    for pattern in ("session_*_input.csv", "session_*_sensor.csv"):
         candidates = list(DEFAULT_LOG_DIR.glob(pattern))
         if candidates:
             return max(candidates, key=lambda path: path.stat().st_mtime)
@@ -296,7 +296,7 @@ def print_summary(csv_path: Path, rows: list[Row]) -> None:
 
 def configure_matplotlib_japanese(plt: Any) -> None:
     """matplotlibで日本語とマイナス記号が表示できるようにする。"""
-    # pylint: disable=import-outside-toplevel
+    # pylint: disable=import-outside-toplevel,import-error
     from matplotlib import font_manager
 
     font_names = {font.name for font in font_manager.fontManager.ttflist}
@@ -327,7 +327,7 @@ def plot_csv(
     print_summary(csv_path, rows)
 
     try:
-        # pylint: disable=import-outside-toplevel
+        # pylint: disable=import-outside-toplevel,import-error
         import matplotlib.pyplot as plt
     except ModuleNotFoundError as exc:
         if output:
@@ -498,7 +498,7 @@ def plot_csv_tk(csv_path: Path, rows: list[Row], milliseconds: bool) -> None:
         frame,
         text=(
             "加速度: ax/ay/az  入力: x/y/tilt  "
-            "状態: 発射/シールド/ボム  位置: player/target"
+            "状態: 発射/シールド/ボム"
         ),
     )
     legend.pack(anchor=tk.W, pady=(8, 0))
