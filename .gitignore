@@ -1,0 +1,17 @@
+# Processing runtime files
+processing/logs/
+processing/client_id.txt
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node / formatter tooling
+node_modules/
+
+# OS / editor files
+.DS_Store
+.idea/
+.vscode/
