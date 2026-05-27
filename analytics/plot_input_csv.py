@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Processingで記録した汎用入力CSVログをグラフ表示する。"""
+"""Plot Processing input CSV logs."""
+# pylint: disable=duplicate-code
 
 from __future__ import annotations
 
@@ -27,6 +28,8 @@ NUMERIC_COLUMNS = (
     "roll_raw",
     "btnA_raw",
     "btnB_raw",
+    "control_x_raw",
+    "control_y_raw",
     "input_x_smooth",
     "input_y_smooth",
     "tilt_x",
@@ -48,30 +51,32 @@ BOUNDED_COLUMNS = {
     "light_shield": (0.0, 1.0),
 }
 DISPLAY_NAMES = {
-    "elapsed_ms": "経過時間",
-    "microbit_runtime_ms": "micro:bit実行時間",
-    "serial_valid": "シリアル有効",
-    "serial_column_count": "受信列数",
-    "serial_valid_count": "有効行数",
-    "serial_invalid_count": "無効行数",
-    "ax_raw": "左右加速度（生）",
-    "ay_raw": "前後加速度（生）",
-    "az_raw": "上下加速度（生）",
-    "light_raw": "明るさ",
-    "temp_raw": "温度",
-    "shake_raw": "振った",
-    "pitch_raw": "前後の角度（生）",
-    "roll_raw": "左右の角度（生）",
-    "input_x_smooth": "左右入力（ならし）",
-    "input_y_smooth": "前後入力（ならし）",
-    "tilt_x": "左右入力",
-    "speed_modifier": "速度補正",
-    "btnA_raw": "Aボタン",
-    "btnB_raw": "Bボタン",
-    "btnA_pressed": "A押下瞬間",
-    "btnB_pressed": "B押下瞬間",
-    "shake_event": "shakeイベント",
-    "light_shield": "暗さシールド",
+    "elapsed_ms": "elapsed",
+    "microbit_runtime_ms": "microbit ms",
+    "serial_valid": "serial ok",
+    "serial_column_count": "cols",
+    "serial_valid_count": "valid rows",
+    "serial_invalid_count": "bad rows",
+    "ax_raw": "ax raw",
+    "ay_raw": "ay raw",
+    "az_raw": "az raw",
+    "light_raw": "light",
+    "temp_raw": "temp",
+    "shake_raw": "shake",
+    "pitch_raw": "pitch",
+    "roll_raw": "roll",
+    "control_x_raw": "control x",
+    "control_y_raw": "control y",
+    "input_x_smooth": "smooth x",
+    "input_y_smooth": "smooth y",
+    "tilt_x": "tilt x",
+    "speed_modifier": "speed",
+    "btnA_raw": "A raw",
+    "btnB_raw": "B raw",
+    "btnA_pressed": "A press",
+    "btnB_pressed": "B press",
+    "shake_event": "shake event",
+    "light_shield": "light flag",
 }
 DEFAULT_LOG_DIR = (
     Path(__file__).resolve().parents[1]
@@ -85,7 +90,7 @@ Row = dict[str, float | None]
 
 @dataclass(frozen=True)
 class PlotSeries:
-    """matplotlibで描く1系列分の表示設定。"""
+    """One plotted series."""
 
     column: str
     color: str
@@ -95,7 +100,7 @@ class PlotSeries:
 
 @dataclass(frozen=True)
 class TimeSeriesPanel:
-    """matplotlibの時系列パネル1枚分の設定。"""
+    """One time-series panel."""
 
     series: list[PlotSeries]
     title: str
@@ -105,7 +110,7 @@ class TimeSeriesPanel:
 
 @dataclass(frozen=True)
 class PanelBounds:
-    """Tkのキャンバス上で1パネルが占める範囲。"""
+    """Panel bounds on a Tk canvas."""
 
     left: int
     top: int
@@ -115,7 +120,7 @@ class PanelBounds:
 
 @dataclass(frozen=True)
 class TkPanel:
-    """Tkで描く1パネル分の入力データ。"""
+    """Data needed to draw one Tk panel."""
 
     bounds: PanelBounds
     x_values: list[float]
@@ -126,7 +131,7 @@ class TkPanel:
 
 @dataclass(frozen=True)
 class PanelScale:
-    """データ座標をTkキャンバス座標に変換するための範囲情報。"""
+    """Scale data coordinates into Tk canvas coordinates."""
 
     bounds: PanelBounds
     x_min: float
@@ -135,7 +140,7 @@ class PanelScale:
     y_max: float
 
     def sx(self, value: float) -> float:
-        """X軸のデータ値をキャンバス座標に変換する。"""
+        """Convert an x value into a canvas coordinate."""
         width = self.bounds.right - self.bounds.left
         return (
             self.bounds.left
@@ -143,7 +148,7 @@ class PanelScale:
         )
 
     def sy(self, value: float) -> float:
-        """Y軸のデータ値をキャンバス座標に変換する。"""
+        """Convert a y value into a canvas coordinate."""
         height = self.bounds.bottom - self.bounds.top
         return (
             self.bounds.bottom
@@ -152,54 +157,54 @@ class PanelScale:
 
 
 def display_name(column: str) -> str:
-    """CSVの列名を画面表示用の日本語名に変換する。"""
+    """Return a short display label for a CSV column."""
     return DISPLAY_NAMES.get(column, column)
 
 
 def parse_args() -> argparse.Namespace:
-    """コマンドライン引数を解析する。"""
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Processingで保存したmicro:bitのCSVログをグラフ表示します。"
+        description="Plot a Processing micro:bit input CSV log."
     )
     parser.add_argument(
         "csv_path",
         nargs="?",
         type=Path,
         help=(
-            "分析するCSVファイル。省略すると "
-            "processing/logs/ 内の最新 session_*_input.csv を使います。"
+            "CSV file to plot. Defaults to the latest "
+            "session_*_input.csv in processing/logs."
         ),
     )
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
-        help="グラフ画像の保存先。matplotlibが必要です。",
+        help="Output image path. Requires matplotlib.",
     )
     parser.add_argument(
         "--no-show",
         action="store_true",
-        help="グラフ画面を開きません。画像保存だけしたいときに使います。",
+        help="Do not open a graph window.",
     )
     parser.add_argument(
         "--milliseconds",
         action="store_true",
-        help="横軸を秒ではなくミリ秒で表示します。",
+        help="Use milliseconds on the x-axis.",
     )
     return parser.parse_args()
 
 
 def latest_csv_path() -> Path:
-    """ログフォルダから最新CSVを返す。"""
+    """Return the latest input CSV log."""
     for pattern in ("session_*_input.csv", "session_*_sensor.csv"):
         candidates = list(DEFAULT_LOG_DIR.glob(pattern))
         if candidates:
             return max(candidates, key=lambda path: path.stat().st_mtime)
-    raise FileNotFoundError(f"CSVログが見つかりません: {DEFAULT_LOG_DIR}")
+    raise FileNotFoundError(f"CSV log not found: {DEFAULT_LOG_DIR}")
 
 
 def to_float(value: str | None) -> float | None:
-    """文字列を有限のfloatに変換し、空値や不正値はNoneにする。"""
+    """Parse a finite float, returning None for invalid values."""
     if value is None:
         return None
 
@@ -218,7 +223,7 @@ def to_float(value: str | None) -> float | None:
 
 
 def normalize_value(column: str, value: float | None) -> float | None:
-    """列ごとの許容範囲を外れた値をNoneにする。"""
+    """Drop out-of-range values for bounded columns."""
     if value is None:
         return None
 
@@ -232,18 +237,18 @@ def normalize_value(column: str, value: float | None) -> float | None:
 
 
 def load_rows(csv_path: Path) -> list[Row]:
-    """CSVファイルを読み込み、数値列だけを正規化した行リストで返す。"""
+    """Load normalized numeric rows from a CSV file."""
     if not csv_path.exists():
-        raise FileNotFoundError(f"CSVファイルが見つかりません: {csv_path}")
+        raise FileNotFoundError(f"CSV file not found: {csv_path}")
     if not csv_path.is_file():
-        raise ValueError(f"CSVのパスがファイルではありません: {csv_path}")
+        raise ValueError(f"CSV path is not a file: {csv_path}")
 
     with csv_path.open(newline="", encoding="utf-8") as csv_file:
         reader = csv.DictReader(csv_file)
         if reader.fieldnames is None:
-            raise ValueError(f"CSVにヘッダー行がありません: {csv_path}")
+            raise ValueError(f"CSV header not found: {csv_path}")
         if "elapsed_ms" not in reader.fieldnames:
-            raise ValueError("CSVに必要な列 elapsed_ms がありません")
+            raise ValueError("CSV column missing: elapsed_ms")
 
         rows: list[Row] = []
         for csv_row in reader:
@@ -255,74 +260,54 @@ def load_rows(csv_path: Path) -> list[Row]:
                 rows.append(row)
 
     if not rows:
-        raise ValueError(f"elapsed_msを読める行がありません: {csv_path}")
+        raise ValueError(f"No usable elapsed_ms rows: {csv_path}")
     return rows
 
 
 def values(rows: Iterable[Row], column: str) -> list[float | None]:
-    """指定列の値を行リストから取り出す。"""
+    """Return one column from rows."""
     return [row.get(column) for row in rows]
 
 
 def clean_pairs(
     x_values: Iterable[float | None], y_values: Iterable[float | None]
 ) -> list[tuple[float, float]]:
-    """X/Yのどちらかが欠けている点を除いたペアを返す。"""
+    """Return x/y pairs that have both values."""
     return [
         (x, y) for x, y in zip(x_values, y_values) if x is not None and y is not None
     ]
 
 
 def time_axis(rows: list[Row], milliseconds: bool) -> tuple[list[float], str]:
-    """elapsed_ms列から横軸の値とラベルを作る。"""
+    """Build x-axis values from elapsed_ms."""
     elapsed_ms = [value or 0.0 for value in values(rows, "elapsed_ms")]
     start_ms = elapsed_ms[0]
     divisor = 1.0 if milliseconds else 1000.0
-    label = "経過時間（ミリ秒）" if milliseconds else "経過時間（秒）"
+    label = "elapsed ms" if milliseconds else "elapsed sec"
     return [((value - start_ms) / divisor) for value in elapsed_ms], label
 
 
 def print_summary(csv_path: Path, rows: list[Row]) -> None:
-    """読み込めたCSVの概要を標準出力に表示する。"""
+    """Print a short CSV summary."""
     present = [
         column
         for column in NUMERIC_COLUMNS
         if any(row.get(column) is not None for row in rows)
     ]
-    print(f"読み込んだCSV: {csv_path}")
-    print(f"使用できる行数: {len(rows)}")
-    print("読み込めたデータ: " + ", ".join(display_name(column) for column in present))
+    print(f"CSV: {csv_path}")
+    print(f"Rows: {len(rows)}")
+    print("Columns: " + ", ".join(display_name(column) for column in present))
 
 
-def configure_matplotlib_japanese(plt: Any) -> None:
-    """matplotlibで日本語とマイナス記号が表示できるようにする。"""
-    # pylint: disable=import-outside-toplevel,import-error
-    from matplotlib import font_manager
-
-    font_names = {font.name for font in font_manager.fontManager.ttflist}
-    candidates = [
-        "Hiragino Sans",
-        "Hiragino Maru Gothic Pro",
-        "Yu Gothic",
-        "YuGothic",
-        "Meiryo",
-        "Noto Sans CJK JP",
-        "Noto Sans JP",
-        "IPAexGothic",
-    ]
-
-    for font_name in candidates:
-        if font_name in font_names:
-            plt.rcParams["font.family"] = font_name
-            break
-
+def configure_matplotlib(plt: Any) -> None:
+    """Apply small matplotlib defaults."""
     plt.rcParams["axes.unicode_minus"] = False
 
 
 def plot_csv(
     csv_path: Path, output: Path | None, show: bool, milliseconds: bool
 ) -> None:
-    """CSVを読み込み、matplotlibまたはTkでグラフ表示する。"""
+    """Load and plot a CSV file."""
     rows = load_rows(csv_path)
     print_summary(csv_path, rows)
 
@@ -332,14 +317,14 @@ def plot_csv(
     except ModuleNotFoundError as exc:
         if output:
             raise SystemExit(
-                "--output で画像保存するには matplotlib が必要です。"
-                "インストール: python3 -m pip install matplotlib"
+                "--output requires matplotlib. "
+                "Install: python3 -m pip install matplotlib"
             ) from exc
         if show:
             plot_csv_tk(csv_path, rows, milliseconds)
         return
 
-    configure_matplotlib_japanese(plt)
+    configure_matplotlib(plt)
     time_values, time_label = time_axis(rows, milliseconds)
 
     fig, axes = plt.subplots(4, 1, figsize=(12, 10), sharex=False)
@@ -354,9 +339,11 @@ def plot_csv(
                 PlotSeries("ax_raw", "tab:blue", 0.45, 1.0),
                 PlotSeries("ay_raw", "tab:orange", 0.45, 1.0),
                 PlotSeries("az_raw", "tab:gray", 0.45, 1.0),
+                PlotSeries("control_x_raw", "tab:brown", 1.0, 1.4),
+                PlotSeries("control_y_raw", "tab:purple", 1.0, 1.4),
             ],
-            "加速度",
-            "加速度",
+            "Raw",
+            "value",
         ),
     )
 
@@ -366,13 +353,15 @@ def plot_csv(
         rows,
         TimeSeriesPanel(
             [
+                PlotSeries("control_x_raw", "tab:brown", 0.8, 1.2),
+                PlotSeries("control_y_raw", "tab:purple", 0.8, 1.2),
                 PlotSeries("input_x_smooth", "tab:brown", 1.0, 1.6),
                 PlotSeries("input_y_smooth", "tab:purple", 1.0, 1.6),
                 PlotSeries("tilt_x", "tab:blue", 1.0, 1.6),
                 PlotSeries("speed_modifier", "tab:green", 1.0, 1.6),
             ],
-            "加工済み入力",
-            "値",
+            "Input",
+            "value",
         ),
     )
 
@@ -387,8 +376,8 @@ def plot_csv(
                 PlotSeries("shake_event", "tab:orange", 1.0, 1.8),
                 PlotSeries("light_shield", "tab:cyan", 1.0, 1.8),
             ],
-            "イベント",
-            "状態",
+            "Buttons",
+            "state",
             step=True,
         ),
     )
@@ -404,8 +393,8 @@ def plot_csv(
                 PlotSeries("shake_raw", "tab:orange", 1.0, 1.6),
                 PlotSeries("az_raw", "tab:gray", 0.8, 1.2),
             ],
-            "追加センサー",
-            "値",
+            "Extra",
+            "value",
         ),
     )
 
@@ -417,7 +406,7 @@ def plot_csv(
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(output, dpi=160)
-        print(f"グラフ画像を保存しました: {output}")
+        print(f"Saved: {output}")
 
     if show:
         plt.show()
@@ -431,7 +420,7 @@ def plot_time_series(
     rows: list[Row],
     panel: TimeSeriesPanel,
 ) -> None:
-    """matplotlibの1パネルに複数系列の時系列データを描く。"""
+    """Draw one matplotlib panel."""
     plotted = False
     for series in panel.series:
         pairs = clean_pairs(time_values, values(rows, series.column))
@@ -468,7 +457,7 @@ def plot_time_series(
 
 
 def plot_csv_tk(csv_path: Path, rows: list[Row], milliseconds: bool) -> None:
-    """matplotlibが使えない環境向けにTkで簡易グラフを表示する。"""
+    """Show a simple Tk plot when matplotlib is unavailable."""
     # pylint: disable=import-outside-toplevel
     import tkinter as tk
     from tkinter import ttk
@@ -476,7 +465,7 @@ def plot_csv_tk(csv_path: Path, rows: list[Row], milliseconds: bool) -> None:
     time_values, time_label = time_axis(rows, milliseconds)
 
     root = tk.Tk()
-    root.title(f"CSVグラフ - {csv_path.name}")
+    root.title(f"CSV plot - {csv_path.name}")
     root.geometry("1100x800")
 
     frame = ttk.Frame(root, padding=12)
@@ -487,7 +476,7 @@ def plot_csv_tk(csv_path: Path, rows: list[Row], milliseconds: bool) -> None:
 
     subtitle = ttk.Label(
         frame,
-        text=f"{len(rows)}行 / 横軸: {time_label}",
+        text=f"{len(rows)} rows / x: {time_label}",
     )
     subtitle.pack(anchor=tk.W, pady=(2, 10))
 
@@ -497,14 +486,14 @@ def plot_csv_tk(csv_path: Path, rows: list[Row], milliseconds: bool) -> None:
     legend = ttk.Label(
         frame,
         text=(
-            "加速度: ax/ay/az  入力: x/y/tilt  "
-            "状態: 発射/シールド/ボム"
+            "raw: ax/ay/az/control  input: x/y/tilt  "
+            "state: A/B/shake"
         ),
     )
     legend.pack(anchor=tk.W, pady=(8, 0))
 
     def redraw(_event: object | None = None) -> None:
-        """ウィンドウサイズに合わせてTkキャンバスを描き直す。"""
+        """Redraw the Tk canvas after resize."""
         canvas.delete("all")
         width = max(canvas.winfo_width(), 600)
         height = max(canvas.winfo_height(), 420)
@@ -519,9 +508,11 @@ def plot_csv_tk(csv_path: Path, rows: list[Row], milliseconds: bool) -> None:
                     ("ax_raw", "#1f77b4"),
                     ("ay_raw", "#ff7f0e"),
                     ("az_raw", "#7f7f7f"),
+                    ("control_x_raw", "#8c564b"),
+                    ("control_y_raw", "#9467bd"),
                 ],
                 rows,
-                "加速度",
+                "Raw",
             ),
         )
         draw_panel(
@@ -536,7 +527,7 @@ def plot_csv_tk(csv_path: Path, rows: list[Row], milliseconds: bool) -> None:
                     ("speed_modifier", "#2ca02c"),
                 ],
                 rows,
-                "加工済み入力",
+                "Input",
             ),
         )
         draw_panel(
@@ -551,7 +542,7 @@ def plot_csv_tk(csv_path: Path, rows: list[Row], milliseconds: bool) -> None:
                     ("az_raw", "#7f7f7f"),
                 ],
                 rows,
-                "追加センサー",
+                "Extra",
             ),
         )
 
@@ -563,7 +554,7 @@ def draw_panel(
     canvas: Any,
     panel: TkPanel,
 ) -> None:
-    """Tkキャンバスに1枚分の折れ線グラフを描く。"""
+    """Draw one line chart on a Tk canvas."""
     all_y_values = [
         y
         for column, _color in panel.series
@@ -587,7 +578,7 @@ def draw_panel(
 def build_panel_scale(
     bounds: PanelBounds, x_values: list[float], y_values: list[float]
 ) -> PanelScale:
-    """Tkパネル用の軸範囲を計算する。"""
+    """Build axis bounds for a Tk panel."""
     x_min = min(x_values)
     x_max = max(x_values)
     y_min = min(y_values)
@@ -603,7 +594,7 @@ def build_panel_scale(
 
 
 def draw_panel_frame(canvas: Any, panel: TkPanel, scale: PanelScale) -> None:
-    """Tkパネルの枠、タイトル、横罫線、Y軸ラベルを描く。"""
+    """Draw a Tk panel frame and y-axis labels."""
     bounds = panel.bounds
     canvas.create_rectangle(
         bounds.left,
@@ -634,7 +625,7 @@ def draw_panel_frame(canvas: Any, panel: TkPanel, scale: PanelScale) -> None:
 
 
 def main() -> None:
-    """コマンドライン実行時の入口。"""
+    """Run the CLI."""
     args = parse_args()
     csv_path = args.csv_path or latest_csv_path()
     plot_csv(

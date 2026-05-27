@@ -10,6 +10,7 @@ processing/game.pde
 processing/log.pde
 analytics/plot_input_csv.py
 analytics/plot_game_csv.py
+analytics/plot_logs.py
 ```
 
 ## 使い方
@@ -24,31 +25,37 @@ analytics/plot_game_csv.py
 
 `processing/client_id.txt` と `processing/logs/` は実行時に作成されるローカルデータなので、Git管理からは除外しています。
 
-## CSVをグラフ表示
+## Plot CSV logs
 
-汎用入力ログを表示:
+Open input and game logs in one wide window:
+
+```bash
+python3 analytics/plot_logs.py
+```
+
+Select a session:
+
+```bash
+python3 analytics/plot_logs.py --session 20260527_221115
+```
+
+Open each log separately:
 
 ```bash
 python3 analytics/plot_input_csv.py
-```
-
-ゲームログを表示:
-
-```bash
 python3 analytics/plot_game_csv.py
 ```
 
-ファイルを指定:
+Select files:
 
 ```bash
 python3 analytics/plot_input_csv.py processing/logs/session_YYYYMMDD_HHMMSS_input.csv
 python3 analytics/plot_game_csv.py processing/logs/session_YYYYMMDD_HHMMSS_game.csv
 ```
 
-画像として保存する場合は `matplotlib` が必要です。
+Saving an image requires `matplotlib`.
 
 ```bash
 python3 -m pip install matplotlib
-python3 analytics/plot_input_csv.py processing/logs/session_YYYYMMDD_HHMMSS_input.csv --output input_graph.png --no-show
-python3 analytics/plot_game_csv.py processing/logs/session_YYYYMMDD_HHMMSS_game.csv --output game_graph.png --no-show
+python3 analytics/plot_logs.py --session 20260527_221115 --output-dir graphs --no-show
 ```
