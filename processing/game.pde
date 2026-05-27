@@ -1,34 +1,94 @@
 void processInput() {
-  if (has_sensor_data) {
-    input_x_smooth = smoothSensorValue(input_x_smooth, ax_raw);
-    input_y_smooth = smoothSensorValue(input_y_smooth, ay_raw);
+  boolean axis_fresh = axisControlFresh();
+  boolean button_fresh = buttonControlFresh();
+
+  updateSmoothedInput(axis_fresh);
+  updateTiltAndSpeed();
+  updateButtonInput(button_fresh);
+  updateLightInput();
+  updatePlayerVelocity();
+}
+
+void updateSmoothedInput(boolean axis_fresh) {
+  if (!input_calibrated) {
+    resetInputMotion();
+    return;
   }
 
-  float input_x = input_x_smooth;
-  if (abs(input_x) < INPUT_DEAD) {
-    input_x = 0;
+  if (has_sensor_data && axis_fresh) {
+    input_x_smooth = smoothSensorValue(input_x_smooth, control_x_raw - input_x_neutral);
+    input_y_smooth = smoothSensorValue(input_y_smooth, control_y_raw - input_y_neutral);
+    return;
   }
-  tilt_x = constrain(input_x / INPUT_AXIS_MAX, -1.0, 1.0);
+
+  input_x_smooth = smoothSensorValue(input_x_smooth, 0);
+  input_y_smooth = smoothSensorValue(input_y_smooth, 0);
+}
+
+void resetInputMotion() {
+  input_x_smooth = 0;
+  input_y_smooth = 0;
+  tilt_x = 0;
+  speed_modifier = 1.0;
+  player_vx = 0;
+}
+
+void updateTiltAndSpeed() {
+  tilt_x = constrain(applyDeadZone(input_x_smooth) / INPUT_AXIS_MAX, -1.0, 1.0);
 
   float input_y = constrain((input_y_smooth * INPUT_Y_SPEED_SIGN) / INPUT_AXIS_MAX, -1.0, 1.0);
-  speed_modifier = 1.0 + input_y * 0.15;
-  speed_modifier = constrain(speed_modifier, 0.85, 1.15);
+  speed_modifier = constrain(1.0 + input_y * 0.15, 0.85, 1.15);
+}
 
-  btnA_pressed = btnA_press_latch;
+float applyDeadZone(float value) {
+  if (abs(value) < INPUT_DEAD) {
+    return 0;
+  }
+  return value;
+}
+
+void updateButtonInput(boolean button_fresh) {
+  btnA_pressed = (btnA_press_latch == 1 || (button_fresh && btnA_raw == 1)) ? 1 : 0;
   btnB_pressed = btnB_press_latch;
   shake_event = shake_event_latch;
+  if (btnA_pressed == 1) {
+    shot_buffer_frames = SHOT_BUFFER_FRAMES;
+  } else if (shot_buffer_frames > 0) {
+    shot_buffer_frames--;
+  }
   btnA_press_latch = 0;
   btnB_press_latch = 0;
   shake_event_latch = 0;
+}
 
+void updateLightInput() {
   light_shield = (has_sensor_data && light_raw <= LIGHT_SHIELD_THRESHOLD) ? 1 : 0;
   light_shield_started = (light_shield == 1 && prev_light_shield == 0) ? 1 : 0;
+  prev_light_shield = light_shield;
+}
 
+void updatePlayerVelocity() {
   float target_vx = tilt_x * INPUT_MAX_SPEED * speed_modifier;
   player_vx = lerp(player_vx, target_vx, INPUT_VELOCITY_ALPHA);
   player_vx = constrain(player_vx, -INPUT_MAX_SPEED, INPUT_MAX_SPEED);
+}
 
-  prev_light_shield = light_shield;
+void updateInputCalibration(float new_x, float new_y) {
+  if (input_calibrated) {
+    return;
+  }
+
+  input_calibration_x_sum += new_x;
+  input_calibration_y_sum += new_y;
+  input_calibration_count++;
+
+  if (input_calibration_count >= INPUT_CALIBRATION_SAMPLES) {
+    input_x_neutral = input_calibration_x_sum / input_calibration_count;
+    input_y_neutral = input_calibration_y_sum / input_calibration_count;
+    input_x_smooth = 0;
+    input_y_smooth = 0;
+    input_calibrated = true;
+  }
 }
 
 float smoothSensorValue(float current_value, float target_value) {
@@ -37,10 +97,27 @@ float smoothSensorValue(float current_value, float target_value) {
   return current_value + delta;
 }
 
+boolean axisControlFresh() {
+  long age_ms = controlAgeMs();
+  return age_ms >= 0 && age_ms <= INPUT_AXIS_STALE_MS;
+}
+
+boolean buttonControlFresh() {
+  long age_ms = controlAgeMs();
+  return age_ms >= 0 && age_ms <= INPUT_BUTTON_STALE_MS;
+}
+
+long controlAgeMs() {
+  if (last_control_pc_timestamp_ms == 0) {
+    return -1;
+  }
+  return System.currentTimeMillis() - last_control_pc_timestamp_ms;
+}
+
 void updateGame() {
   player_x += player_vx;
   player_x = constrain(player_x, PLAYER_W * 0.5, GAME_W - PLAYER_W * 0.5);
-  shield_active = (btnB_raw == 1);
+  shield_active = (buttonControlFresh() && btnB_raw == 1);
 
   if (btnB_pressed == 1) {
     setEvent("shield", light_shield == 1 ? "boosted" : "on");
@@ -48,10 +125,11 @@ void updateGame() {
     setEvent("shield", "light");
   }
 
-  if (btnA_pressed == 1 && !bullet_active) {
+  if (shot_buffer_frames > 0 && !bullet_active) {
     bullet_active = true;
     bullet_x = player_x;
     bullet_y = player_y - PLAYER_H;
+    shot_buffer_frames = 0;
     setEvent("shot", "A");
   }
 
@@ -99,6 +177,7 @@ void drawGame() {
   drawPlayer();
   drawBullet();
   drawTarget();
+  drawCalibrationOverlay();
   drawDebugPanel();
 }
 
@@ -157,6 +236,45 @@ void drawTarget() {
   rect(target_x, target_y + 8, 18, 4, 1);
 }
 
+void drawCalibrationOverlay() {
+  if (input_calibrated) {
+    return;
+  }
+
+  rectMode(CORNER);
+  noStroke();
+  fill(0, 170);
+  rect(0, 0, GAME_W, SCREEN_H);
+
+  float progress = constrain((float)input_calibration_count / INPUT_CALIBRATION_SAMPLES, 0, 1);
+  int box_w = 360;
+  int box_h = 120;
+  int box_x = (GAME_W - box_w) / 2;
+  int box_y = (SCREEN_H - box_h) / 2;
+
+  fill(24, 30, 40);
+  rect(box_x, box_y, box_w, box_h, 6);
+
+  fill(235);
+  textAlign(CENTER, TOP);
+  textSize(20);
+  text(has_sensor_data ? "CALIBRATING" : "WAITING MICRO:BIT", GAME_W / 2, box_y + 18);
+
+  textSize(14);
+  fill(190);
+  text("Keep the micro:bit still", GAME_W / 2, box_y + 48);
+
+  noStroke();
+  fill(55, 65, 78);
+  rect(box_x + 30, box_y + 80, box_w - 60, 16, 3);
+  fill(70, 220, 170);
+  rect(box_x + 30, box_y + 80, (box_w - 60) * progress, 16, 3);
+
+  fill(235);
+  textAlign(CENTER, TOP);
+  text(input_calibration_count + " / " + INPUT_CALIBRATION_SAMPLES, GAME_W / 2, box_y + 100);
+}
+
 void drawDebugPanel() {
   noStroke();
   fill(24, 30, 40);
@@ -171,15 +289,19 @@ void drawDebugPanel() {
   int y = 22;
   int lh = 24;
 
-  text("ax_raw: " + nf(ax_raw, 0, 2), x, y); y += lh;
+  text("control_x: " + nf(control_x_raw, 0, 2), x, y); y += lh;
   text("input_x_smooth: " + nf(input_x_smooth, 0, 2), x, y); y += lh;
-  text("ay_raw: " + nf(ay_raw, 0, 2), x, y); y += lh;
+  text("control_y: " + nf(control_y_raw, 0, 2), x, y); y += lh;
   text("input_y_smooth: " + nf(input_y_smooth, 0, 2), x, y); y += lh;
   text("tilt_x: " + nf(tilt_x, 0, 3), x, y); y += lh;
-  text("roll_angle: " + nf(roll_raw, 0, 2), x, y); y += lh;
-  text("pitch_angle: " + nf(pitch_raw, 0, 2), x, y); y += lh;
+  text("calibration: " + inputCalibrationStatus(), x, y); y += lh;
+  text("control_age: " + controlAgeMs(), x, y); y += lh;
+  text("neutral_x: " + nf(input_x_neutral, 0, 2), x, y); y += lh;
+  text("ax_raw: " + nf(ax_raw, 0, 2), x, y); y += lh;
+  text("ay_raw: " + nf(ay_raw, 0, 2), x, y); y += lh;
   text("btnA_raw: " + btnA_raw, x, y); y += lh;
   text("btnA_pressed: " + btnA_pressed, x, y); y += lh;
+  text("shot_buffer: " + shot_buffer_frames, x, y); y += lh;
   text("btnB_raw: " + btnB_raw, x, y); y += lh;
   text("shake: " + shake_raw, x, y); y += lh;
   text("light: " + light_raw, x, y); y += lh;
@@ -195,6 +317,13 @@ void drawDebugPanel() {
   text("columns: " + serial_column_count, x, y); y += lh;
   text("valid rows: " + serial_valid_count, x, y); y += lh;
   text("last line: " + shortSerialLine(), x, y);
+}
+
+String inputCalibrationStatus() {
+  if (input_calibrated) {
+    return "ready";
+  }
+  return input_calibration_count + "/" + INPUT_CALIBRATION_SAMPLES;
 }
 
 void resetGame() {

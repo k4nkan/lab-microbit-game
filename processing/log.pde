@@ -24,8 +24,9 @@ void initLog() {
 
 String inputCsvHeader() {
   return "pc_timestamp_ms,elapsed_ms,microbit_runtime_ms,frame_count,serial_valid,"
-    + "serial_column_count,serial_valid_count,serial_invalid_count,"
+    + "serial_column_count,serial_valid_count,serial_invalid_count,control_age_ms,"
     + "ax_raw,ay_raw,az_raw,light_raw,temp_raw,shake_raw,pitch_raw,roll_raw,btnA_raw,btnB_raw,"
+    + "control_x_raw,control_y_raw,"
     + "input_x_smooth,input_y_smooth,tilt_x,speed_modifier,btnA_pressed,btnB_pressed,shake_event,light_shield,"
     + "serial_status,last_serial_line";
 }
@@ -58,6 +59,7 @@ void writeInputLog() {
     str(serial_column_count),
     str(serial_valid_count),
     str(serial_invalid_count),
+    str(controlAgeMs()),
 
     fmt(ax_raw),
     fmt(ay_raw),
@@ -69,6 +71,8 @@ void writeInputLog() {
     fmt(roll_raw),
     str(btnA_raw),
     str(btnB_raw),
+    fmt(control_x_raw),
+    fmt(control_y_raw),
 
     fmt(input_x_smooth),
     fmt(input_y_smooth),

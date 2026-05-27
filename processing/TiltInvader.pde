@@ -68,30 +68,86 @@ void parseSerialLine(String line) {
   }
 
   last_serial_line = line;
-  String[] parts = splitTokens(line, ",");
+  String[] parts = split(line, ',');
   serial_column_count = parts.length;
 
-  if (parts.length == CONTROL_COLUMN_COUNT && parts[0].equals("C")) {
-    parseControlLine(parts);
+  if (parseTaggedParts(parts)) {
     return;
   }
 
-  if (parts.length == DETAIL_SENSOR_COLUMN_COUNT && parts[0].equals("S")) {
-    parseDetailSensorLine(parts);
+  if (tryRecoverTaggedLine(line)) {
     return;
-  }
-
-  if (parts.length > DETAIL_SENSOR_COLUMN_COUNT) {
-    if (tryRecoverTaggedLine(line)) {
-      return;
-    }
   }
 
   serial_invalid_count++;
   serial_status = "invalid columns: " + parts.length;
 }
 
+boolean parseTaggedParts(String[] parts) {
+  if (isControlLine(parts)) {
+    parseControlLine(parts);
+    return true;
+  }
+
+  if (isLegacyControlLine(parts)) {
+    parseLegacyControlLine(parts);
+    return true;
+  }
+
+  if (isDetailSensorLine(parts)) {
+    parseDetailSensorLine(parts);
+    return true;
+  }
+
+  return false;
+}
+
+boolean isControlLine(String[] parts) {
+  return parts.length == CONTROL_COLUMN_COUNT && parts[0].equals("C");
+}
+
+boolean isLegacyControlLine(String[] parts) {
+  return parts.length == LEGACY_CONTROL_COLUMN_COUNT && parts[0].equals("C");
+}
+
+boolean isDetailSensorLine(String[] parts) {
+  return parts.length == DETAIL_SENSOR_COLUMN_COUNT && parts[0].equals("S");
+}
+
 void parseControlLine(String[] parts) {
+  float new_runtime = parseFloatSafe(parts[1]);
+  float new_ax = parseFloatSafe(parts[2]);
+  float new_ay = parseFloatSafe(parts[3]);
+  float new_roll = parseFloatSafe(parts[4]);
+  float new_pitch = parseFloatSafe(parts[5]);
+  float new_shake = parseFloatSafe(parts[6]);
+  float new_a = parseFloatSafe(parts[7]);
+  float new_b = parseFloatSafe(parts[8]);
+
+  if (!allFinite8(new_runtime, new_ax, new_ay, new_roll, new_pitch,
+      new_shake, new_a, new_b)) {
+    markInvalidSerialLine("invalid number");
+    return;
+  }
+
+  if (abs(new_ax) > INPUT_SENSOR_ABS_LIMIT || abs(new_ay) > INPUT_SENSOR_ABS_LIMIT ||
+      abs(new_roll) > INPUT_TILT_ABS_LIMIT || abs(new_pitch) > INPUT_TILT_ABS_LIMIT) {
+    markInvalidSerialLine("out of range");
+    return;
+  }
+
+  if (!isBinaryValue(new_shake) || !isBinaryValue(new_a) || !isBinaryValue(new_b)) {
+    markInvalidSerialLine("invalid button");
+    return;
+  }
+
+  roll_raw = new_roll;
+  pitch_raw = new_pitch;
+  applyControlInput(new_runtime, new_ax, new_ay, new_roll, new_pitch,
+    new_shake, new_a, new_b, "valid control");
+}
+
+void parseLegacyControlLine(String[] parts) {
   float new_runtime = parseFloatSafe(parts[1]);
   float new_ax = parseFloatSafe(parts[2]);
   float new_ay = parseFloatSafe(parts[3]);
@@ -100,21 +156,49 @@ void parseControlLine(String[] parts) {
   float new_b = parseFloatSafe(parts[6]);
 
   if (!allFinite6(new_runtime, new_ax, new_ay, new_shake, new_a, new_b)) {
-    serial_invalid_count++;
-    serial_status = "invalid number";
+    markInvalidSerialLine("invalid number");
     return;
   }
 
   if (abs(new_ax) > INPUT_SENSOR_ABS_LIMIT || abs(new_ay) > INPUT_SENSOR_ABS_LIMIT) {
-    serial_invalid_count++;
-    serial_status = "out of range";
+    markInvalidSerialLine("out of range");
     return;
   }
 
-  int new_btnA_raw = int(constrain(round(new_a), 0, 1));
-  int new_btnB_raw = int(constrain(round(new_b), 0, 1));
-  int new_shake_raw = int(constrain(round(new_shake), 0, 1));
+  if (!isBinaryValue(new_shake) || !isBinaryValue(new_a) || !isBinaryValue(new_b)) {
+    markInvalidSerialLine("invalid button");
+    return;
+  }
 
+  applyControlInput(new_runtime, new_ax, new_ay,
+    accelerationToTiltDegrees(new_ax), accelerationToTiltDegrees(new_ay),
+    new_shake, new_a, new_b, "valid control");
+}
+
+void applyControlInput(float new_runtime, float new_ax, float new_ay,
+    float new_control_x, float new_control_y,
+    float new_shake, float new_a, float new_b, String status) {
+  int new_shake_raw = int(new_shake);
+  int new_btnA_raw = int(new_a);
+  int new_btnB_raw = int(new_b);
+
+  updateButtonLatches(new_btnA_raw, new_btnB_raw, new_shake_raw);
+
+  microbit_runtime_ms = (long)new_runtime;
+  ax_raw = new_ax;
+  ay_raw = new_ay;
+  control_x_raw = new_control_x;
+  control_y_raw = new_control_y;
+  shake_raw = new_shake_raw;
+  btnA_raw = new_btnA_raw;
+  btnB_raw = new_btnB_raw;
+  updateInputCalibration(control_x_raw, control_y_raw);
+  last_control_pc_timestamp_ms = System.currentTimeMillis();
+
+  markValidSerialLine(status);
+}
+
+void updateButtonLatches(int new_btnA_raw, int new_btnB_raw, int new_shake_raw) {
   if (new_btnA_raw == 1 && btnA_raw == 0) {
     btnA_press_latch = 1;
   }
@@ -124,15 +208,6 @@ void parseControlLine(String[] parts) {
   if (new_shake_raw == 1 && shake_raw == 0) {
     shake_event_latch = 1;
   }
-
-  microbit_runtime_ms = (long)new_runtime;
-  ax_raw = new_ax;
-  ay_raw = new_ay;
-  shake_raw = new_shake_raw;
-  btnA_raw = new_btnA_raw;
-  btnB_raw = new_btnB_raw;
-
-  markValidSerialLine("valid control");
 }
 
 void parseDetailSensorLine(String[] parts) {
@@ -144,14 +219,12 @@ void parseDetailSensorLine(String[] parts) {
   float new_roll = parseFloatSafe(parts[6]);
 
   if (!allFinite6(new_runtime, new_az, new_light, new_temp, new_pitch, new_roll)) {
-    serial_invalid_count++;
-    serial_status = "invalid number";
+    markInvalidSerialLine("invalid number");
     return;
   }
 
   if (abs(new_az) > INPUT_SENSOR_ABS_LIMIT) {
-    serial_invalid_count++;
-    serial_status = "out of range";
+    markInvalidSerialLine("out of range");
     return;
   }
 
@@ -173,17 +246,10 @@ boolean tryRecoverTaggedLine(String line) {
       continue;
     }
 
-    String[] parts = splitTokens(candidate, ",");
-    if (parts.length == CONTROL_COLUMN_COUNT && parts[0].equals("C")) {
+    String[] parts = split(candidate, ',');
+    if (parseTaggedParts(parts)) {
       serial_column_count = parts.length;
       last_serial_line = candidate;
-      parseControlLine(parts);
-      return true;
-    }
-    if (parts.length == DETAIL_SENSOR_COLUMN_COUNT && parts[0].equals("S")) {
-      serial_column_count = parts.length;
-      last_serial_line = candidate;
-      parseDetailSensorLine(parts);
       return true;
     }
   }
@@ -192,14 +258,17 @@ boolean tryRecoverTaggedLine(String line) {
 
 void markValidSerialLine(String status) {
   if (!has_sensor_data) {
-    input_x_smooth = ax_raw;
-    input_y_smooth = ay_raw;
     has_sensor_data = true;
   }
 
   serial_valid = 1;
   serial_valid_count++;
   last_valid_pc_timestamp_ms = System.currentTimeMillis();
+  serial_status = status;
+}
+
+void markInvalidSerialLine(String status) {
+  serial_invalid_count++;
   serial_status = status;
 }
 
@@ -256,6 +325,22 @@ float parseFloatSafe(String value) {
 boolean allFinite6(float a, float b, float c, float d, float e, float f) {
   return isFinite(a) && isFinite(b) && isFinite(c) &&
     isFinite(d) && isFinite(e) && isFinite(f);
+}
+
+boolean allFinite8(float a, float b, float c, float d, float e,
+    float f, float g, float h) {
+  return isFinite(a) && isFinite(b) && isFinite(c) &&
+    isFinite(d) && isFinite(e) && isFinite(f) &&
+    isFinite(g) && isFinite(h);
+}
+
+boolean isBinaryValue(float value) {
+  return value == 0 || value == 1;
+}
+
+float accelerationToTiltDegrees(float acceleration) {
+  float ratio = constrain(acceleration / 1024.0, -1.0, 1.0);
+  return degrees(asin(ratio));
 }
 
 boolean isFinite(float value) {

@@ -10,6 +10,7 @@ let a = 0;
 let b = 0;
 let runtimeMs = 0;
 let lastDetailMs = 0;
+let sendDetail = false;
 
 serial.redirectToUSB();
 serial.setBaudRate(BaudRate.BaudRate115200);
@@ -22,10 +23,12 @@ basic.forever(function () {
   a = input.buttonIsPressed(Button.A) ? 1 : 0;
   b = input.buttonIsPressed(Button.B) ? 1 : 0;
 
-  // "C,runtime,ax,ay,shake,A,B\n"
-  serial.writeLine("C," + runtimeMs + "," + ax + "," + ay + "," + shake + "," + a + "," + b);
+  // "C,runtime,ax,ay,shake,A,B"
+  serial.writeLine(
+    "C," + runtimeMs + "," + ax + "," + ay + "," + shake + "," + a + "," + b,
+  );
 
-  if (runtimeMs - lastDetailMs >= 100) {
+  if (sendDetail && runtimeMs - lastDetailMs >= 2000) {
     lastDetailMs = runtimeMs;
     az = input.acceleration(Dimension.Z); // 上下方向
     lightLevelValue = input.lightLevel(); // 明るさ
@@ -33,9 +36,22 @@ basic.forever(function () {
     pitch = input.rotation(Rotation.Pitch); // 前後の角度
     roll = input.rotation(Rotation.Roll); // 左右の角度
 
-    // "S,runtime,az,light,temp,pitch,roll\n"
-    serial.writeLine("S," + runtimeMs + "," + az + "," + lightLevelValue + "," + temp + "," + pitch + "," + roll);
+    // "S,runtime,az,light,temp,pitch,roll"
+    serial.writeLine(
+      "S," +
+        runtimeMs +
+        "," +
+        az +
+        "," +
+        lightLevelValue +
+        "," +
+        temp +
+        "," +
+        pitch +
+        "," +
+        roll,
+    );
   }
 
-  basic.pause(20);
+  basic.pause(50);
 });
